@@ -4,11 +4,18 @@ const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
 const app = express();
+const admin = require("firebase-admin");
 const port = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+const serviceAccount = require("./firebase-admin-key.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.cvlwqch.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
@@ -25,10 +32,36 @@ async function run() {
   try {
     const parcelCollection = client.db("profastDB").collection("parcels");
     const paymentCollection = client.db("profastDB").collection("payments");
+    const trackingCollection = client.db("profastDB").collection("tracking");
+    const userCollection = client.db("profastDB").collection("users");
 
-    // Get  parcels by the email
-    app.get("/parcels/:email", async (req, res) => {
+    // middleware
+    const verifyFBToken = async (req, res, next) => {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) {
+        return res.status(401).send({ message: "unauthorized access" });
+      }
+      const token = authHeader.split(" ")[1];
+      if (!token) {
+        return res.status(401).send({ message: "unauthorized access" });
+      }
+
+      // verify token
+      try {
+        const decoded = await admin.auth().verifyIdToken(token);
+        req.decoded = decoded;
+        next();
+      } catch (error) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+    };
+
+    // Get parcels by the email
+    app.get("/parcels/:email", verifyFBToken, async (req, res) => {
       const email = req.params.email;
+      if(req.decoded.email !== email){
+        return res.status(403).send({message: 'forbidden access'})
+      }
       let query = { created_by: email };
       const result = await parcelCollection
         .find(query)
@@ -46,8 +79,39 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/payments", verifyFBToken, async (req, res) => {
+      const email = req.query.email;
+      if(req.decoded.email !== email){
+       return res.status(403).send({message: 'forbidden access'}) 
+      }
+      const query = { email: email };
+      const result = await paymentCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    app.post("/tracking", async (req, res) => {
+      const {
+        tracking_id,
+        parcel_id,
+        status,
+        message,
+        updated_by = "",
+      } = req.body;
+      const log = {
+        tracking_id,
+        parcel_id: parcel_id ? new ObjectId(parcel_id) : undefined,
+        status,
+        message,
+        time: new Date(),
+        updated_by,
+      };
+      const result = await trackingCollection.insertOne(log);
+      res.send(result);
+    });
+
     // Add parcel
     app.post("/add-parcel", async (req, res) => {
+      console.log(req.headers);
       try {
         const data = req.body;
         const weight = req.body.weight;
@@ -78,19 +142,21 @@ async function run() {
       try {
         const { parcelId, email, paymentMethod, amount, transactionId } =
           req.body;
-          
-      const filter = {_id:new ObjectId(parcelId)}
-      const updatedDoc = {
-        $set: {
-          payment_status: 'paid'
-        }
-      }
-      const updateResult = await parcelCollection.updateOne(filter,updatedDoc)
-      
-      // if(updateResult.modifiedCount === 0){
-      //   return res.status(404).send({message: 'parcel not found or already paid'})
-      // }
-      
+
+        const filter = { _id: new ObjectId(parcelId) };
+        const updatedDoc = {
+          $set: {
+            payment_status: "paid",
+          },
+        };
+        const updateResult = await parcelCollection.updateOne(
+          filter,
+          updatedDoc
+        );
+
+        // if(updateResult.modifiedCount === 0){
+        //   return res.status(404).send({message: 'parcel not found or already paid'})
+        // }
 
         // Insert new payment
         const newPayment = {
@@ -119,6 +185,19 @@ async function run() {
       const query = { _id: new ObjectId(id) };
       const result = await parcelCollection.deleteOne(query);
       res.send(result);
+    });
+
+    // user api
+
+    app.post("/users", async (req, res) => {
+      const email = req.body.email;
+      const userExists = await userCollection.findOne({ email });
+      if (userExists) {
+        return res.status(200).send({ message: "user already exists" });
+      }
+      const user = req.body;
+      const result = await userCollection.insertOne(user);
+      res.status(201).send(result);
     });
 
     // Send a ping to confirm a successful connection
