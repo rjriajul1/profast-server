@@ -34,6 +34,7 @@ async function run() {
     const paymentCollection = client.db("profastDB").collection("payments");
     const trackingCollection = client.db("profastDB").collection("tracking");
     const userCollection = client.db("profastDB").collection("users");
+    const riderCollection = client.db("profastDB").collection("riders");
 
     // middleware
     const verifyFBToken = async (req, res, next) => {
@@ -199,6 +200,14 @@ async function run() {
       const result = await userCollection.insertOne(user);
       res.status(201).send(result);
     });
+
+
+    // rider api 
+    app.post('/riders', async (req,res)=> {
+     const newRider = req.body;
+     const result = await riderCollection.insertOne(newRider)
+     res.status(201).send(result)
+    })
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
