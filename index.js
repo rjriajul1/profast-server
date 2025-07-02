@@ -60,8 +60,8 @@ async function run() {
     // Get parcels by the email
     app.get("/parcels/:email", verifyFBToken, async (req, res) => {
       const email = req.params.email;
-      if(req.decoded.email !== email){
-        return res.status(403).send({message: 'forbidden access'})
+      if (req.decoded.email !== email) {
+        return res.status(403).send({ message: "forbidden access" });
       }
       let query = { created_by: email };
       const result = await parcelCollection
@@ -82,8 +82,8 @@ async function run() {
 
     app.get("/payments", verifyFBToken, async (req, res) => {
       const email = req.query.email;
-      if(req.decoded.email !== email){
-       return res.status(403).send({message: 'forbidden access'}) 
+      if (req.decoded.email !== email) {
+        return res.status(403).send({ message: "forbidden access" });
       }
       const query = { email: email };
       const result = await paymentCollection.find(query).toArray();
@@ -201,13 +201,72 @@ async function run() {
       res.status(201).send(result);
     });
 
+    // rider api
+    app.post("/riders", async (req, res) => {
+      const newRider = req.body;
+      const result = await riderCollection.insertOne(newRider);
+      res.status(201).send(result);
+    });
 
-    // rider api 
-    app.post('/riders', async (req,res)=> {
-     const newRider = req.body;
-     const result = await riderCollection.insertOne(newRider)
-     res.status(201).send(result)
-    })
+    app.get("/pending-rider", async (req, res) => {
+      const result = await riderCollection
+        .find({ status: "pending" })
+        .toArray();
+      res.send(result);
+    });
+    // patch/riders/approve/:id
+    app.patch("/riders/approve/:id", async (req, res) => {
+      const riderId = req.params.id;
+      const query = { _id: new ObjectId(riderId) };
+      const updatedDoc = {
+        $set: {
+          status: "active",
+        },
+      };
+
+      try {
+        const result = await riderCollection.updateOne(query, updatedDoc);
+
+        if (result.modifiedCount > 0) {
+          res.send({ success: true, message: "Rider approved." });
+        } else {
+          res.status(404).send({
+            success: false,
+            message: "Rider not found or already active.",
+          });
+        }
+      } catch (err) {
+        res.status(500).send({
+          success: false,
+          message: "Server error",
+          error: err.message,
+        });
+      }
+    });
+    // DELETE /riders/reject/:id
+    app.delete("/riders/reject/:id", async (req, res) => {
+      const riderId = req.params.id;
+
+      try {
+        const result = await riderCollection.deleteOne({
+          _id: new ObjectId(riderId),
+        });
+
+        if (result.deletedCount > 0) {
+          res.send({ success: true, message: "Rider rejected and removed." });
+        } else {
+          res.status(404).send({ success: false, message: "Rider not found." });
+        }
+      } catch (err) {
+        res
+          .status(500)
+          .send({
+            success: false,
+            message: "Server error",
+            error: err.message,
+          });
+      }
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
