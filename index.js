@@ -243,6 +243,53 @@ async function run() {
         });
       }
     });
+
+    // patch/riders/approve/:id
+    app.patch("/riders/deactivate/:id", async (req, res) => {
+      const riderId = req.params.id;
+      const query = { _id: new ObjectId(riderId) };
+      const updatedDoc = {
+        $set: {
+          status: "deactivate",
+        },
+      };
+
+      try {
+        const result = await riderCollection.updateOne(query, updatedDoc);
+
+        if (result.modifiedCount > 0) {
+          res.send({ success: true, message: "Rider approved." });
+        } else {
+          res.status(404).send({
+            success: false,
+            message: "Rider not found or already active.",
+          });
+        }
+      } catch (err) {
+        res.status(500).send({
+          success: false,
+          message: "Server error",
+          error: err.message,
+        });
+      }
+    });
+    // GET /riders/active
+    app.get("/riders/active", async (req, res) => {
+      try {
+        const activeRiders = await riderCollection
+          .find({ status: "active" })
+          .toArray();
+
+        res.send(activeRiders);
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: "Failed to fetch active riders",
+          error: error.message,
+        });
+      }
+    });
+
     // DELETE /riders/reject/:id
     app.delete("/riders/reject/:id", async (req, res) => {
       const riderId = req.params.id;
@@ -258,13 +305,11 @@ async function run() {
           res.status(404).send({ success: false, message: "Rider not found." });
         }
       } catch (err) {
-        res
-          .status(500)
-          .send({
-            success: false,
-            message: "Server error",
-            error: err.message,
-          });
+        res.status(500).send({
+          success: false,
+          message: "Server error",
+          error: err.message,
+        });
       }
     });
 
