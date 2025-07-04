@@ -190,6 +190,27 @@ async function run() {
 
     // user api
 
+    app.get('/users/search', async (req,res )=> {
+      const queryEmail = req.query.email;
+
+      if(!queryEmail){
+        return res.status(400).send({message:"Missing email query"})
+      }
+      const regex = new RegExp(queryEmail, "i");
+
+      try {
+        const users = await userCollection.find({email: {$regex:regex}})
+        .project({email: 1, created_at: 1, role: 1})
+        .limit(10)
+        .toArray()
+        res.send(users)
+      }
+      catch(error){
+      res.status(500).send({message: "Error searching users"})
+      }
+    });
+
+
     app.post("/users", async (req, res) => {
       const email = req.body.email;
       const userExists = await userCollection.findOne({ email });
@@ -200,6 +221,30 @@ async function run() {
       const result = await userCollection.insertOne(user);
       res.status(201).send(result);
     });
+
+
+    app.patch('/users/:id/role',async (req,res)=> {
+      const {id} = req.params;
+      const {role} = req.body;
+      console.log(role);
+
+      // if(!["admin,user"].includes(role)){
+      //   return res.status(400).send({message: "Invalid role"});
+      // }
+
+      try{
+        const result = await userCollection.updateOne(
+          {_id: new ObjectId(id)},
+          {$set:{
+            role
+          }}
+        );
+        res.send({message: `user role updated to ${role} `, result})
+      }
+       catch(error){
+      res.status(500).send({message: "Failed to update users"})
+      }
+    })
 
     // rider api
     app.post("/riders", async (req, res) => {
@@ -217,10 +262,11 @@ async function run() {
     // patch/riders/approve/:id
     app.patch("/riders/approve/:id", async (req, res) => {
       const riderId = req.params.id;
+      const { email, status } = req.body;
       const query = { _id: new ObjectId(riderId) };
       const updatedDoc = {
         $set: {
-          status: "active",
+          status,
         },
       };
 
@@ -229,6 +275,15 @@ async function run() {
 
         if (result.modifiedCount > 0) {
           res.send({ success: true, message: "Rider approved." });
+          if (status === "active") {
+            const useQuery = { email };
+            const updatedDoc = {
+              $set: {
+                role: "rider",
+              },
+            };
+            await userCollection.updateOne(useQuery, updatedDoc);
+          }
         } else {
           res.status(404).send({
             success: false,
